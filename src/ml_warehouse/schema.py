@@ -1,27 +1,7 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright © 2021 Genome Research Ltd. All rights reserved.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# @author Adam Blanchet <ab59@sanger.ac.uk>
-
-from sqlalchemy import CHAR, Column, Computed, DECIMAL, Date, DateTime, Enum, Float, ForeignKey, ForeignKeyConstraint, Index, String, TIMESTAMP, Table, Text, text
-from sqlalchemy.dialects.mysql import BIGINT as mysqlBIGINT, CHAR as mysqlCHAR, DATETIME as mysqlDATETIME, DOUBLE as mysqlDOUBLE, ENUM as mysqlENUM, FLOAT as mysqlFLOAT, INTEGER as mysqlINTEGER, SMALLINT as mysqlSMALLINT, TINYINT as mysqlTINYINT, VARCHAR as mysqlVARCHAR
-from sqlalchemy.orm import declarative_base, relationship
-
 from ml_warehouse._decorators import add_docstring
+from sqlalchemy import CHAR, Column, Computed, DECIMAL, Date, DateTime, Enum, Float, ForeignKey, ForeignKeyConstraint, Index, String, TIMESTAMP, Table, Text, text
+from sqlalchemy.dialects.mysql import BIGINT as mysqlBIGINT, CHAR as mysqlCHAR, DATETIME as mysqlDATETIME, DOUBLE as mysqlDOUBLE, ENUM as mysqlENUM, FLOAT as mysqlFLOAT, INTEGER as mysqlINTEGER, MEDIUMTEXT as mysqlMEDIUMTEXT, SMALLINT as mysqlSMALLINT, TINYINT as mysqlTINYINT, VARCHAR as mysqlVARCHAR
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -162,6 +142,17 @@ class CgapSupplierBarcode(Base):
     date = Column(TIMESTAMP, nullable=False, server_default=text("'0000-00-00 00:00:00'"))
 
 
+t_cherrypicked_samples = Table(
+    'cherrypicked_samples', metadata,
+    Column('root_sample_id', mysqlMEDIUMTEXT),
+    Column('plate_barcode', String(255)),
+    Column('phenotype', String(255)),
+    Column('coordinate', String(255)),
+    Column('created', DateTime),
+    Column('robot_type', String(7))
+)
+
+
 @add_docstring
 class IseqExternalProductMetrics(Base):
     __tablename__ = 'iseq_external_product_metrics'
@@ -240,6 +231,12 @@ class IseqExternalProductMetrics(Base):
     nrd_assessment = Column(CHAR(4), comment='"PASS" based on nrd_persent < 2% or "FAIL" or "NA" if genotyping data not available for this sample')
     sex_reported = Column(CHAR(6), comment='Sex as reported by sample supplier')
     sex_computed = Column(CHAR(6), comment='Genetic sex as identified by sequence data')
+    input_files_status = Column(CHAR(10), comment="Status of the input files, either 'USEABLE' or 'DELETED'")
+    intermediate_files_status = Column(CHAR(10), comment="Status of the intermediate files, either 'USEABLE' or 'DELETED'")
+    output_files_status = Column(CHAR(10), comment="Status of the output files, either 'ARCHIVED', 'USEABLE' or 'DELETED'")
+    input_status_override_ref = Column(String(255), comment='Status override reference for the input files')
+    intermediate_status_override_ref = Column(String(255), comment='Status override reference for the intermediate files')
+    output_status_override_ref = Column(String(255), comment='Status override reference for the output files')
 
     iseq_external_product_components = relationship('IseqExternalProductComponents', back_populates='iseq_external_product_metrics')
 
@@ -458,6 +455,19 @@ class PacBioRunWellMetrics(Base):
 
 
 @add_docstring
+class PsdSampleCompoundsComponents(Base):
+    __tablename__ = 'psd_sample_compounds_components'
+    __table_args__ = {'comment': 'A join table owned by PSD to associate compound samples with '
+                'their component samples.'}
+
+    id = Column(mysqlBIGINT(20), primary_key=True)
+    compound_id_sample_tmp = Column(mysqlINTEGER(11), nullable=False, comment='The warehouse ID of the compound sample in the association.')
+    component_id_sample_tmp = Column(mysqlINTEGER(11), nullable=False, comment='The warehouse ID of the component sample in the association.')
+    last_updated = Column(DateTime, nullable=False, comment='Timestamp of last update.')
+    recorded_at = Column(DateTime, nullable=False, comment='Timestamp of warehouse update.')
+
+
+@add_docstring
 class Sample(Base):
     __tablename__ = 'sample'
     __table_args__ = (
@@ -543,6 +553,25 @@ t_schema_migrations = Table(
     'schema_migrations', metadata,
     Column('version', String(255, 'utf8_unicode_ci'), nullable=False, unique=True)
 )
+
+
+@add_docstring
+class SeqProductIrodsLocations(Base):
+    __tablename__ = 'seq_product_irods_locations'
+    __table_args__ = (
+        Index('pi_root_product', 'irods_root_collection', 'id_product', unique=True),
+        {'comment': 'Table relating products to their irods locations'}
+    )
+
+    id_seq_product_irods_locations_tmp = Column(mysqlBIGINT(20, unsigned=True), primary_key=True, comment='Internal to this database id, value can change')
+    id_product = Column(String(64), nullable=False, index=True, comment='A sequencing platform specific product id. For Illumina, data corresponds to the id_iseq_product column in the iseq_product_metrics table')
+    seq_platform_name = Column(Enum('Illumina', 'PacBio', 'ONT'), nullable=False, index=True, comment='Name of the sequencing platform used to produce raw data')
+    pipeline_name = Column(String(32), nullable=False, index=True, comment='The name of the pipeline used to produce the data, values are: npg-prod, npg-prod-alt-process, cellranger, spaceranger, ncov2019-artic-nf')
+    irods_root_collection = Column(String(255), nullable=False, comment='Path to the product root collection in iRODS')
+    created = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'), comment='Datetime this record was created')
+    last_changed = Column(DateTime, server_default=text('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'), comment='Datetime this record was created or changed')
+    irods_data_relative_path = Column(String(255), comment='The path, relative to the root collection, to the most used data location')
+    irods_secondary_data_relative_path = Column(String(255), comment='The path, relative to the root collection, to a useful data location')
 
 
 @add_docstring
@@ -806,6 +835,7 @@ class PacBioRun(Base):
     pac_bio_library_tube_legacy_id = Column(mysqlINTEGER(11), comment='Legacy library_id for backwards compatibility.')
     library_created_at = Column(DateTime, comment='Timestamp of library creation')
     pac_bio_run_name = Column(String(255, 'utf8_unicode_ci'), comment='Name of the run')
+    pipeline_id_lims = Column(String(60, 'utf8_unicode_ci'), comment='LIMS-specific pipeline identifier that unambiguously defines library type (eg. Sequel-v1, IsoSeq-v1)')
 
     sample = relationship('Sample', back_populates='pac_bio_run')
     study = relationship('Study', back_populates='pac_bio_run')
