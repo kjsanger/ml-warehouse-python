@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# @author mksanger <mk35@sanger.ac.uk>
+# @author mgcam <mg8@sanger.ac.uk>
 
 from ml_warehouse._decorators import add_docstring
 from sqlalchemy import CHAR, Column, Computed, DECIMAL, Date, DateTime, Enum, Float, ForeignKey, ForeignKeyConstraint, Index, String, TIMESTAMP, Table, Text, text
@@ -463,6 +463,7 @@ class PacBioRunWellMetrics(Base):
     __tablename__ = 'pac_bio_run_well_metrics'
     __table_args__ = (
         Index('pac_bio_metrics_run_well', 'pac_bio_run_name', 'well_label', unique=True),
+        Index('pb_rw_qc_state_index', 'qc_seq_state', 'qc_seq_state_is_final'),
         {'comment': 'Status and run information by well and some basic QC data from '
                 'SMRT Link'}
     )
@@ -472,29 +473,33 @@ class PacBioRunWellMetrics(Base):
     well_label = Column(mysqlVARCHAR(255, charset='utf8', collation='utf8_unicode_ci'), nullable=False, comment='The well identifier for the plate, A1-H12')
     instrument_type = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), nullable=False, comment='The instrument type e.g. Sequel')
     id_pac_bio_product = Column(CHAR(64), unique=True, comment='Product id')
+    qc_seq_state = Column(String(255), comment='Current sequencing QC state')
+    qc_seq_state_is_final = Column(mysqlTINYINT(1), comment='A flag marking the sequencing QC state as final (1) or not final (0)')
+    qc_seq_date = Column(DateTime, index=True, comment='The date the current sequencing QC state was assigned')
+    qc_seq = Column(mysqlTINYINT(1), comment='The final sequencing QC outcome as 0(failed), 1(passed) or NULL')
     instrument_name = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The instrument name e.g. SQ54097')
     chip_type = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The chip type e.g. 8mChip')
     sl_hostname = Column(mysqlVARCHAR(255, charset='utf8', collation='utf8_unicode_ci'), comment='SMRT Link server hostname')
     sl_run_uuid = Column(mysqlVARCHAR(36, charset='utf8', collation='utf8_unicode_ci'), comment='SMRT Link specific run uuid')
     ts_run_name = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The PacBio run name')
-    movie_name = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The PacBio movie name')
+    movie_name = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), index=True, comment='The PacBio movie name')
     movie_minutes = Column(mysqlSMALLINT(5, unsigned=True), comment='Movie time (collection time) in minutes')
     created_by = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='Created by user name recorded in SMRT Link')
     binding_kit = Column(mysqlVARCHAR(255, charset='utf8', collation='utf8_unicode_ci'), comment='Binding kit version')
     sequencing_kit = Column(mysqlVARCHAR(255, charset='utf8', collation='utf8_unicode_ci'), comment='Sequencing kit version')
     sequencing_kit_lot_number = Column(mysqlVARCHAR(255, charset='utf8', collation='utf8_unicode_ci'), comment='Sequencing Kit lot number')
     cell_lot_number = Column(String(32), comment='SMRT Cell Lot Number')
-    ccs_execution_mode = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The PacBio ccs exection mode e.g. OnInstument, OffInstument or None')
+    ccs_execution_mode = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), index=True, comment='The PacBio ccs exection mode e.g. OnInstument, OffInstument or None')
     include_kinetics = Column(mysqlTINYINT(1, unsigned=True), comment='Include kinetics information where ccs is run')
     hifi_only_reads = Column(mysqlTINYINT(1, unsigned=True), comment='CCS was run on the instrument and only HiFi reads were included in the export from the instrument')
     heteroduplex_analysis = Column(mysqlTINYINT(1, unsigned=True), comment='Analysis has been run on the instrument to detect and resolve heteroduplex reads')
     loading_conc = Column(mysqlFLOAT(unsigned=True), comment='SMRT Cell loading concentration (pM)')
     run_start = Column(DateTime, comment='Timestamp of run started')
-    run_complete = Column(DateTime, comment='Timestamp of run complete')
+    run_complete = Column(DateTime, index=True, comment='Timestamp of run complete')
     run_transfer_complete = Column(DateTime, comment='Timestamp of run transfer complete')
     run_status = Column(String(32), comment='Last recorded status, primarily to explain runs not completed.')
     well_start = Column(DateTime, comment='Timestamp of well started')
-    well_complete = Column(DateTime, comment='Timestamp of well complete')
+    well_complete = Column(DateTime, index=True, comment='Timestamp of well complete')
     well_status = Column(String(32), comment='Last recorded status, primarily to explain wells not completed.')
     chemistry_sw_version = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The PacBio chemistry software version')
     instrument_sw_version = Column(mysqlVARCHAR(32, charset='utf8', collation='utf8_unicode_ci'), comment='The PacBio instrument software version')
@@ -616,6 +621,7 @@ class Sample(Base):
 
     bmap_flowcell = relationship('BmapFlowcell', back_populates='sample')
     flgen_plate = relationship('FlgenPlate', back_populates='sample')
+    gsu_sample_uploads = relationship('GsuSampleUploads', back_populates='sample')
     iseq_flowcell = relationship('IseqFlowcell', back_populates='sample')
     oseq_flowcell = relationship('OseqFlowcell', back_populates='sample')
     pac_bio_run = relationship('PacBioRun', back_populates='sample')
@@ -700,6 +706,7 @@ class Study(Base):
 
     bmap_flowcell = relationship('BmapFlowcell', back_populates='study')
     flgen_plate = relationship('FlgenPlate', back_populates='study')
+    gsu_sample_uploads = relationship('GsuSampleUploads', back_populates='study')
     iseq_flowcell = relationship('IseqFlowcell', back_populates='study')
     oseq_flowcell = relationship('OseqFlowcell', back_populates='study')
     pac_bio_run = relationship('PacBioRun', back_populates='study')
@@ -756,6 +763,26 @@ class FlgenPlate(Base):
 
     sample = relationship('Sample', back_populates='flgen_plate')
     study = relationship('Study', back_populates='flgen_plate')
+
+
+@add_docstring
+class GsuSampleUploads(Base):
+    __tablename__ = 'gsu_sample_uploads'
+
+    id_gsu_sample_upload_tmp = Column(mysqlINTEGER(10, unsigned=True), primary_key=True, comment='Row ID')
+    file_path = Column(String(255, 'utf8_unicode_ci'), nullable=False, unique=True, comment='Location of data file')
+    id_study_tmp = Column(ForeignKey('study.id_study_tmp'), nullable=False, index=True, comment='Study for this item')
+    id_sample_tmp = Column(ForeignKey('sample.id_sample_tmp'), nullable=False, index=True, comment='Sample info for this item')
+    library_name = Column(String(40, 'utf8_unicode_ci'), nullable=False, comment='Supplier library name')
+    library_type = Column(String(40, 'utf8_unicode_ci'), nullable=False, comment='Library type')
+    instrument_model = Column(String(40, 'utf8_unicode_ci'), nullable=False, comment='Sequencing machine used')
+    lab_name = Column(String(100, 'utf8_unicode_ci'), nullable=False, comment='Lab supplying the data')
+    created = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'), comment='Datetime this record was created')
+    last_changed = Column(DateTime, server_default=text('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'), comment='Datetime this record was last updated')
+    run_accession = Column(String(40, 'utf8_unicode_ci'), unique=True, comment='ENA run accession, populated on ENA submission')
+
+    sample = relationship('Sample', back_populates='gsu_sample_uploads')
+    study = relationship('Study', back_populates='gsu_sample_uploads')
 
 
 @add_docstring
@@ -884,6 +911,11 @@ class OseqFlowcell(Base):
     tag2_sequence = Column(String(255, 'utf8_unicode_ci'), comment='Sequence of the second tag')
     tag2_set_id_lims = Column(String(255, 'utf8_unicode_ci'), comment='LIMs-specific identifier of the tag set for the second tag')
     tag2_set_name = Column(String(255, 'utf8_unicode_ci'), comment='WTSI-wide tag set name for the second tag')
+    flowcell_id = Column(String(255, 'utf8_unicode_ci'), comment='The id of the flowcell. Supplied with the flowcell. Format FAVnnnn')
+    library_tube_uuid = Column(String(36, 'utf8_unicode_ci'), comment='The uuid for the originating library tube')
+    library_tube_barcode = Column(String(255, 'utf8_unicode_ci'), comment='The barcode for the originating library tube')
+    run_uuid = Column(String(36, 'utf8_unicode_ci'), comment='The uuid of the run')
+    run_id = Column(String(255, 'utf8_unicode_ci'), comment='Run identifier assigned by MinKNOW')
 
     sample = relationship('Sample', back_populates='oseq_flowcell')
     study = relationship('Study', back_populates='oseq_flowcell')
@@ -1162,8 +1194,9 @@ class PacBioProductMetrics(Base):
 
     id_pac_bio_pr_metrics_tmp = Column(mysqlINTEGER(11), primary_key=True)
     id_pac_bio_rw_metrics_tmp = Column(ForeignKey('pac_bio_run_well_metrics.id_pac_bio_rw_metrics_tmp', ondelete='CASCADE'), nullable=False, index=True, comment='PacBio run well metrics id, see "pac_bio_run_well_metrics.id_pac_bio_rw_metrics_tmp"')
-    id_pac_bio_tmp = Column(ForeignKey('pac_bio_run.id_pac_bio_tmp', ondelete='SET NULL'), index=True, comment='PacBio run id, see "pac_bio_run.id_pac_bio_tmp"')
+    id_pac_bio_tmp = Column(ForeignKey('pac_bio_run.id_pac_bio_tmp', ondelete='SET NULL'), comment='PacBio run id, see "pac_bio_run.id_pac_bio_tmp"')
     id_pac_bio_product = Column(CHAR(64), unique=True, comment='Product id')
+    qc = Column(mysqlTINYINT(1), index=True, comment='The final QC outcome of the product as 0(failed), 1(passed) or NULL')
 
     pac_bio_run_well_metrics = relationship('PacBioRunWellMetrics', back_populates='pac_bio_product_metrics')
     pac_bio_run = relationship('PacBioRun', back_populates='pac_bio_product_metrics')

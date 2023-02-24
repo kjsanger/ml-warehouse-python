@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+## [1.2.0]
+
+### Added
+ - Binding for a new table:
+  - gsu_sample_uploads
+
+### Changed
+
+ - Bindings for existing tables:
+  - pac_bio_run_well_metrics
+  - pac_bio_product_metrics
+  - oseq_flowcell
+
 ## [1.1.0]
 
 ### Added
